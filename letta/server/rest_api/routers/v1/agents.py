@@ -69,6 +69,7 @@ from letta.validators import AgentId, BlockId, FileId, MessageId, SourceId, Tool
 router = APIRouter(prefix="/agents", tags=["agents"])
 
 logger = get_logger(__name__)
+ARCHIVAL_MEMORY_LOG_TAG = "[archival-memory]"
 
 
 @router.get("/", response_model=list[AgentState], operation_id="list_agents")
@@ -1129,6 +1130,15 @@ async def create_passage(
     Insert a memory into an agent's archival memory store.
     """
     actor = await server.user_manager.get_actor_or_default_async(actor_id=headers.actor_id)
+    logger.info(
+        "%s inserting archival memory",
+        ARCHIVAL_MEMORY_LOG_TAG,
+        extra={
+            "agent_id": agent_id,
+            "tags": request.tags,
+            "created_at": request.created_at,
+        },
+    )
 
     return await server.insert_archival_memory_async(
         agent_id=agent_id, memory_contents=request.text, actor=actor, tags=request.tags, created_at=request.created_at
@@ -1199,6 +1209,14 @@ async def delete_passage(
     Delete a memory from an agent's archival memory store.
     """
     actor = await server.user_manager.get_actor_or_default_async(actor_id=headers.actor_id)
+    logger.info(
+        "%s deleting archival memory",
+        ARCHIVAL_MEMORY_LOG_TAG,
+        extra={
+            "agent_id": agent_id,
+            "memory_id": memory_id,
+        },
+    )
 
     await server.delete_archival_memory_async(memory_id=memory_id, actor=actor)
     return JSONResponse(status_code=status.HTTP_200_OK, content={"message": f"Memory id={memory_id} successfully deleted"})
