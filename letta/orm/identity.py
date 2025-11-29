@@ -21,7 +21,6 @@ class Identity(SqlalchemyBase, OrganizationMixin, ProjectMixin):
             "project_id",
             "organization_id",
             name="unique_identifier_key_project_id_organization_id",
-            postgresql_nulls_not_distinct=True,
             # For SQLite compatibility, we'll need to handle the NULL case differently
             # in the service layer since SQLite doesn't support postgresql_nulls_not_distinct
         ),
