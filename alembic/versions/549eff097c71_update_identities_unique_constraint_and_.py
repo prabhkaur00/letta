@@ -33,7 +33,6 @@ def upgrade() -> None:
         "unique_identifier_without_project",
         "identities",
         ["identifier_key", "project_id", "organization_id"],
-        postgresql_nulls_not_distinct=True,
     )
 
     # Add properties column to identities table

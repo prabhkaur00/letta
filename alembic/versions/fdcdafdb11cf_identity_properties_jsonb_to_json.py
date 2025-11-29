@@ -40,7 +40,6 @@ def upgrade() -> None:
         "unique_identifier_key_project_id_organization_id",
         "identities",
         ["identifier_key", "project_id", "organization_id"],
-        postgresql_nulls_not_distinct=True,
     )
     # ### end Alembic commands ###
 
@@ -56,7 +55,6 @@ def downgrade() -> None:
         "unique_identifier_without_project",
         "identities",
         ["identifier_key", "project_id", "organization_id"],
-        postgresql_nulls_not_distinct=True,
     )
     op.alter_column(
         "identities",
