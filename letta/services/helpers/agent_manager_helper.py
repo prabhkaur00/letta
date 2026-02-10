@@ -1175,6 +1175,7 @@ async def build_agent_passage_query(
     embed_query: bool = False,
     ascending: bool = True,
     embedding_config: Optional[EmbeddingConfig] = None,
+    embedded_vector: Optional[List[float]] = None,
 ) -> Select:
     """Build query for agent passages with all filters applied."""
 
@@ -1182,15 +1183,16 @@ async def build_agent_passage_query(
     embedded_text = None
     if embed_query:
         assert embedding_config is not None, "embedding_config must be specified for vector search"
-        assert query_text is not None, "query_text must be specified for vector search"
-
-        # Use the new LLMClient for embeddings
-        embedding_client = LLMClient.create(
-            provider_type=embedding_config.embedding_endpoint_type,
-            actor=actor,
-        )
-        embeddings = await embedding_client.request_embeddings([query_text], embedding_config)
-        embedded_text = np.array(embeddings[0])
+        if embedded_vector is not None:
+            embedded_text = np.array(embedded_vector)
+        else:
+            assert query_text is not None, "query_text must be specified for vector search"
+            embedding_client = LLMClient.create(
+                provider_type=embedding_config.embedding_endpoint_type,
+                actor=actor,
+            )
+            embeddings = await embedding_client.request_embeddings([query_text], embedding_config)
+            embedded_text = np.array(embeddings[0])
         embedded_text = np.pad(embedded_text, (0, MAX_EMBEDDING_DIM - embedded_text.shape[0]), mode="constant").tolist()
 
     # Base query for agent passages - join through archives_agents

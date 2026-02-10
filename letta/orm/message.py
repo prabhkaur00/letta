@@ -113,88 +113,31 @@ class Message(SqlalchemyBase, OrganizationMixin, AgentMixin):
 # listener
 
 
+def _is_sqlite_session(session) -> bool:
+    bind = session.get_bind()
+    return bool(bind and bind.dialect.name == "sqlite")
+
+
+def _is_sqlite_connection(connection) -> bool:
+    dialect = getattr(connection, "dialect", None)
+    if dialect is None:
+        engine = getattr(connection, "engine", None)
+        if engine is not None:
+            dialect = getattr(engine, "dialect", None)
+    return bool(dialect and dialect.name == "sqlite")
+
+
 @event.listens_for(Session, "before_flush")
 def set_sequence_id_for_sqlite_bulk(session, flush_context, instances):
     # Handle bulk inserts for SQLite
-    if settings.database_engine is DatabaseChoice.SQLITE:
-        # Find all new Message objects that need sequence IDs
-        new_messages = [obj for obj in session.new if isinstance(obj, Message) and obj.sequence_id is None]
+    if not _is_sqlite_session(session):
+        return
+    # Find all new Message objects that need sequence IDs
+    new_messages = [obj for obj in session.new if isinstance(obj, Message) and obj.sequence_id is None]
 
-        if new_messages:
-            # Create a sequence table if it doesn't exist for atomic increments
-            session.execute(
-                text(
-                    """
-                CREATE TABLE IF NOT EXISTS message_sequence (
-                    id INTEGER PRIMARY KEY,
-                    next_val INTEGER NOT NULL DEFAULT 1
-                )
-            """
-                )
-            )
-
-            # Initialize the sequence table if empty
-            session.execute(
-                text(
-                    """
-                INSERT OR IGNORE INTO message_sequence (id, next_val)
-                SELECT 1, COALESCE(MAX(sequence_id), 0) + 1
-                FROM messages
-            """
-                )
-            )
-
-            # Get the number of records being inserted
-            records_count = len(new_messages)
-
-            # Atomically reserve a range of sequence values for this batch
-            result = session.execute(
-                text(
-                    """
-                UPDATE message_sequence
-                SET next_val = next_val + :count
-                WHERE id = 1
-                RETURNING next_val - :count
-            """
-                ),
-                {"count": records_count},
-            )
-
-            start_sequence_id = result.scalar()
-            if start_sequence_id is None:
-                # Fallback if RETURNING doesn't work (older SQLite versions)
-                session.execute(
-                    text(
-                        """
-                    UPDATE message_sequence
-                    SET next_val = next_val + :count
-                    WHERE id = 1
-                """
-                    ),
-                    {"count": records_count},
-                )
-                start_sequence_id = session.execute(
-                    text(
-                        """
-                    SELECT next_val - :count FROM message_sequence WHERE id = 1
-                """
-                    ),
-                    {"count": records_count},
-                ).scalar()
-
-            # Assign sequential IDs to each record
-            for i, obj in enumerate(new_messages):
-                obj.sequence_id = start_sequence_id + i
-
-
-@event.listens_for(Message, "before_insert")
-def set_sequence_id_for_sqlite(mapper, connection, target):
-    if settings.database_engine is DatabaseChoice.SQLITE:
-        # For SQLite, we need to generate sequence_id manually
-        # Use a database-level atomic operation to avoid race conditions
-
+    if new_messages:
         # Create a sequence table if it doesn't exist for atomic increments
-        connection.execute(
+        session.execute(
             text(
                 """
             CREATE TABLE IF NOT EXISTS message_sequence (
@@ -206,7 +149,7 @@ def set_sequence_id_for_sqlite(mapper, connection, target):
         )
 
         # Initialize the sequence table if empty
-        connection.execute(
+        session.execute(
             text(
                 """
             INSERT OR IGNORE INTO message_sequence (id, next_val)
@@ -216,36 +159,109 @@ def set_sequence_id_for_sqlite(mapper, connection, target):
             )
         )
 
-        # Atomically get the next sequence value
-        result = connection.execute(
+        # Get the number of records being inserted
+        records_count = len(new_messages)
+
+        # Atomically reserve a range of sequence values for this batch
+        result = session.execute(
+            text(
+                """
+            UPDATE message_sequence
+            SET next_val = next_val + :count
+            WHERE id = 1
+            RETURNING next_val - :count
+        """
+            ),
+            {"count": records_count},
+        )
+
+        start_sequence_id = result.scalar()
+        if start_sequence_id is None:
+            # Fallback if RETURNING doesn't work (older SQLite versions)
+            session.execute(
+                text(
+                    """
+                UPDATE message_sequence
+                SET next_val = next_val + :count
+                WHERE id = 1
+            """
+                ),
+                {"count": records_count},
+            )
+            start_sequence_id = session.execute(
+                text(
+                    """
+                SELECT next_val - :count FROM message_sequence WHERE id = 1
+            """
+                ),
+                {"count": records_count},
+            ).scalar()
+
+        # Assign sequential IDs to each record
+        for i, obj in enumerate(new_messages):
+            obj.sequence_id = start_sequence_id + i
+
+
+@event.listens_for(Message, "before_insert")
+def set_sequence_id_for_sqlite(mapper, connection, target):
+    if not _is_sqlite_connection(connection):
+        return
+    # For SQLite, we need to generate sequence_id manually
+    # Use a database-level atomic operation to avoid race conditions
+
+    # Create a sequence table if it doesn't exist for atomic increments
+    connection.execute(
+        text(
+            """
+        CREATE TABLE IF NOT EXISTS message_sequence (
+            id INTEGER PRIMARY KEY,
+            next_val INTEGER NOT NULL DEFAULT 1
+        )
+    """
+        )
+    )
+
+    # Initialize the sequence table if empty
+    connection.execute(
+        text(
+            """
+        INSERT OR IGNORE INTO message_sequence (id, next_val)
+        SELECT 1, COALESCE(MAX(sequence_id), 0) + 1
+        FROM messages
+    """
+        )
+    )
+
+    # Atomically get the next sequence value
+    result = connection.execute(
+        text(
+            """
+        UPDATE message_sequence
+        SET next_val = next_val + 1
+        WHERE id = 1
+        RETURNING next_val - 1
+    """
+        )
+    )
+
+    sequence_id = result.scalar()
+    if sequence_id is None:
+        # Fallback if RETURNING doesn't work (older SQLite versions)
+        connection.execute(
             text(
                 """
             UPDATE message_sequence
             SET next_val = next_val + 1
             WHERE id = 1
-            RETURNING next_val - 1
         """
             )
         )
-
-        sequence_id = result.scalar()
-        if sequence_id is None:
-            # Fallback if RETURNING doesn't work (older SQLite versions)
-            connection.execute(
-                text(
-                    """
-                UPDATE message_sequence
-                SET next_val = next_val + 1
-                WHERE id = 1
-            """
-                )
+        sequence_id = connection.execute(
+            text(
+                """
+            SELECT next_val - 1 FROM message_sequence WHERE id = 1
+        """
             )
-            sequence_id = connection.execute(
-                text(
-                    """
-                SELECT next_val - 1 FROM message_sequence WHERE id = 1
-            """
-                )
-            ).scalar()
+        ).scalar()
 
-        target.sequence_id = sequence_id
+    target.sequence_id = sequence_id

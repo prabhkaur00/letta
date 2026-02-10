@@ -1107,8 +1107,9 @@ async def list_passages(
     Retrieve the memories in an agent's archival memory store (paginated query).
     """
     actor = await server.user_manager.get_actor_or_default_async(actor_id=headers.actor_id)
+    op_start_ns = get_utc_timestamp_ns()
 
-    return await server.get_agent_archival_async(
+    passages = await server.get_agent_archival_async(
         agent_id=agent_id,
         actor=actor,
         after=after,
@@ -1117,6 +1118,21 @@ async def list_passages(
         limit=limit,
         ascending=ascending,
     )
+    logger.info(
+        "%s retrieved archival memory",
+        ARCHIVAL_MEMORY_LOG_TAG,
+        extra={
+            "agent_id": agent_id,
+            "after": after,
+            "before": before,
+            "limit": limit,
+            "query_text": search,
+            "ascending": ascending,
+            "operation_time_ms": (get_utc_timestamp_ns() - op_start_ns) // 1_000_000,
+        },
+    )
+
+    return passages
 
 
 @router.post("/{agent_id}/archival-memory", response_model=list[Passage], operation_id="create_passage", deprecated=True)
@@ -1130,19 +1146,28 @@ async def create_passage(
     Insert a memory into an agent's archival memory store.
     """
     actor = await server.user_manager.get_actor_or_default_async(actor_id=headers.actor_id)
+    op_start_ns = get_utc_timestamp_ns()
+
+    passages = await server.insert_archival_memory_async(
+        agent_id=agent_id,
+        memory_contents=request.text,
+        actor=actor,
+        tags=request.tags,
+        created_at=request.created_at,
+        embedding=request.embedding,
+    )
     logger.info(
-        "%s inserting archival memory",
+        "%s inserted archival memory",
         ARCHIVAL_MEMORY_LOG_TAG,
         extra={
             "agent_id": agent_id,
             "tags": request.tags,
             "created_at": request.created_at,
+            "operation_time_ms": (get_utc_timestamp_ns() - op_start_ns) // 1_000_000,
         },
     )
 
-    return await server.insert_archival_memory_async(
-        agent_id=agent_id, memory_contents=request.text, actor=actor, tags=request.tags, created_at=request.created_at
-    )
+    return passages
 
 
 @router.get(
@@ -1172,6 +1197,7 @@ async def search_archival_memory(
     as the agent's archival_memory_search tool but is accessible for external API usage.
     """
     actor = await server.user_manager.get_actor_or_default_async(actor_id=headers.actor_id)
+    op_start_ns = get_utc_timestamp_ns()
 
     # convert datetime to string in ISO 8601 format
     start_datetime = start_datetime.isoformat() if start_datetime else None
@@ -1192,6 +1218,21 @@ async def search_archival_memory(
     # Convert to proper response schema
     search_results = [ArchivalMemorySearchResult(**result) for result in formatted_results]
 
+    logger.info(
+        "%s searched archival memory",
+        ARCHIVAL_MEMORY_LOG_TAG,
+        extra={
+            "agent_id": agent_id,
+            "tags": tags,
+            "tag_match_mode": tag_match_mode,
+            "top_k": top_k,
+            "start_datetime": start_datetime,
+            "end_datetime": end_datetime,
+            "result_count": len(search_results),
+            "operation_time_ms": (get_utc_timestamp_ns() - op_start_ns) // 1_000_000,
+        },
+    )
+
     return ArchivalMemorySearchResponse(results=search_results, count=len(formatted_results))
 
 
@@ -1209,16 +1250,19 @@ async def delete_passage(
     Delete a memory from an agent's archival memory store.
     """
     actor = await server.user_manager.get_actor_or_default_async(actor_id=headers.actor_id)
+    op_start_ns = get_utc_timestamp_ns()
+
+    await server.delete_archival_memory_async(memory_id=memory_id, actor=actor)
     logger.info(
-        "%s deleting archival memory",
+        "%s deleted archival memory",
         ARCHIVAL_MEMORY_LOG_TAG,
         extra={
             "agent_id": agent_id,
             "memory_id": memory_id,
+            "operation_time_ms": (get_utc_timestamp_ns() - op_start_ns) // 1_000_000,
         },
     )
 
-    await server.delete_archival_memory_async(memory_id=memory_id, actor=actor)
     return JSONResponse(status_code=status.HTTP_200_OK, content={"message": f"Memory id={memory_id} successfully deleted"})
 
 

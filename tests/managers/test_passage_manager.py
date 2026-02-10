@@ -1212,6 +1212,26 @@ async def test_tag_edge_cases(disable_turbopuffer, server: SyncServer, sarah_age
 
 
 @pytest.mark.asyncio
+async def test_insert_passage_with_precomputed_embedding(disable_turbopuffer, server: SyncServer, default_user, sarah_agent):
+    """Verify insert_passage stores provided embeddings without recomputing them."""
+
+    text = "Benchmark-ready memory"
+    precomputed_embedding = [0.1, 0.2, 0.3]
+
+    passages = await server.passage_manager.insert_passage(
+        agent_state=sarah_agent,
+        text=text,
+        actor=default_user,
+        embedding=precomputed_embedding,
+    )
+
+    assert len(passages) == 1
+    passage = passages[0]
+    assert passage.text == text
+    assert passage.embedding[: len(precomputed_embedding)] == approx(precomputed_embedding)
+
+
+@pytest.mark.asyncio
 async def test_search_agent_archival_memory_async(disable_turbopuffer, server: SyncServer, default_user, sarah_agent):
     """Test the search_agent_archival_memory_async method that powers both the agent tool and API endpoint."""
     # Get or create default archive for the agent

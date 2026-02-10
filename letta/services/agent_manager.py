@@ -2068,10 +2068,11 @@ class AgentManager:
         embedding_config: Optional[EmbeddingConfig] = None,
         tags: Optional[List[str]] = None,
         tag_match_mode: Optional[TagMatchMode] = None,
+        query_embedding: Optional[List[float]] = None,
     ) -> List[Tuple[PydanticPassage, float, dict]]:
         """Lists all passages attached to an agent."""
         # Check if we should use Turbopuffer for vector search
-        if embed_query and agent_id and query_text and embedding_config:
+        if embed_query and agent_id and embedding_config:
             # Get archive IDs for the agent
             archive_ids = await self.get_agent_archive_ids_async(agent_id=agent_id, actor=actor)
 
@@ -2088,13 +2089,16 @@ class AgentManager:
                     from letta.helpers.tpuf_client import TurbopufferClient
                     from letta.llm_api.llm_client import LLMClient
 
-                    # Generate embedding for query
-                    embedding_client = LLMClient.create(
-                        provider_type=embedding_config.embedding_endpoint_type,
-                        actor=actor,
-                    )
-                    embeddings = await embedding_client.request_embeddings([query_text], embedding_config)
-                    query_embedding = embeddings[0]
+                    # Generate embedding for query if not provided
+                    if query_embedding is None:
+                        if query_text is None:
+                            raise ValueError("query_text must be provided when query_embedding is not supplied")
+                        embedding_client = LLMClient.create(
+                            provider_type=embedding_config.embedding_endpoint_type,
+                            actor=actor,
+                        )
+                        embeddings = await embedding_client.request_embeddings([query_text], embedding_config)
+                        query_embedding = embeddings[0]
 
                     # Query Turbopuffer - use hybrid search when text is available
                     tpuf_client = TurbopufferClient()
@@ -2129,6 +2133,7 @@ class AgentManager:
                 embed_query=embed_query,
                 ascending=ascending,
                 embedding_config=embedding_config,
+                embedded_vector=query_embedding,
             )
 
             # Add limit

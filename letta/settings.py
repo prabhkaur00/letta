@@ -361,7 +361,16 @@ class Settings(BaseSettings):
 
     @property
     def database_engine(self) -> DatabaseChoice:
-        return DatabaseChoice.POSTGRES if self.letta_pg_uri_no_default else DatabaseChoice.SQLITE
+        override = os.getenv("LETTA_DATABASE_ENGINE")
+        if override:
+            try:
+                return DatabaseChoice(override.lower())
+            except ValueError:
+                pass
+        if self.letta_pg_uri_no_default:
+            return DatabaseChoice.POSTGRES
+        # Default to Postgres (the server is configured to use the bundled Postgres URI unless explicitly overridden)
+        return DatabaseChoice.POSTGRES
 
     @property
     def plugin_register_dict(self) -> dict:

@@ -404,6 +404,7 @@ class PassageManager:
         actor: PydanticUser,
         tags: Optional[List[str]] = None,
         created_at: Optional[datetime] = None,
+        embedding: Optional[List[float]] = None,
         strict_mode: bool = False,
     ) -> List[PydanticPassage]:
         """Insert passage(s) into archival memory
@@ -413,29 +414,34 @@ class PassageManager:
             text: Text content to store as passages
             actor: User performing the operation
             tags: Optional list of tags to attach to all created passages
+            embedding: Optional precomputed embedding. When provided, the text is stored as a single chunk using this vector.
 
         Returns:
             List of created passage objects
         """
 
-        embedding_chunk_size = agent_state.embedding_config.embedding_chunk_size
-        embedding_client = LLMClient.create(
-            provider_type=agent_state.embedding_config.embedding_endpoint_type,
-            actor=actor,
-        )
-
         # Get or create the default archive for the agent
         archive = await self.archive_manager.get_or_create_default_archive_for_agent_async(agent_state=agent_state, actor=actor)
 
-        text_chunks = list(parse_and_chunk_text(text, embedding_chunk_size))
+        if embedding is not None:
+            if not text:
+                return []
+            text_chunks = [text]
+            embeddings = [embedding]
+        else:
+            text_chunks = list(parse_and_chunk_text(text, agent_state.embedding_config.embedding_chunk_size))
 
-        if not text_chunks:
-            return []
+            if not text_chunks:
+                return []
 
-        try:
+            embedding_client = LLMClient.create(
+                provider_type=agent_state.embedding_config.embedding_endpoint_type,
+                actor=actor,
+            )
             # Generate embeddings for all chunks using the new async API
             embeddings = await embedding_client.request_embeddings(text_chunks, agent_state.embedding_config)
 
+        try:
             passages = []
 
             # Always write to SQL database first

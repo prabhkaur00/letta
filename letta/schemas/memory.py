@@ -453,6 +453,10 @@ class CreateArchivalMemory(BaseModel):
     text: str = Field(..., description="Text to write to archival memory.")
     tags: Optional[List[str]] = Field(None, description="Optional list of tags to attach to the memory.")
     created_at: Optional[datetime] = Field(None, description="Optional timestamp for the memory (defaults to current UTC time).")
+    embedding: Optional[List[float]] = Field(
+        None,
+        description="Optional precomputed embedding vector to store with the passage. When provided, no embedding will be generated server-side.",
+    )
 
 
 class ArchivalMemorySearchResult(BaseModel):

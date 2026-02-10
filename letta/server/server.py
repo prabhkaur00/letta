@@ -611,14 +611,25 @@ class SyncServer(object):
         return [passage for passage, _, _ in records]
 
     async def insert_archival_memory_async(
-        self, agent_id: str, memory_contents: str, actor: User, tags: Optional[List[str]], created_at: Optional[datetime]
+        self,
+        agent_id: str,
+        memory_contents: str,
+        actor: User,
+        tags: Optional[List[str]],
+        created_at: Optional[datetime],
+        embedding: Optional[List[float]] = None,
     ) -> List[Passage]:
         # Get the agent object (loaded in memory)
         agent_state = await self.agent_manager.get_agent_by_id_async(agent_id=agent_id, actor=actor)
 
         # Use passage manager which handles dual-write to Turbopuffer if enabled
         passages = await self.passage_manager.insert_passage(
-            agent_state=agent_state, text=memory_contents, tags=tags, actor=actor, created_at=created_at
+            agent_state=agent_state,
+            text=memory_contents,
+            tags=tags,
+            actor=actor,
+            created_at=created_at,
+            embedding=embedding,
         )
 
         return passages
